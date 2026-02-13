@@ -10,10 +10,10 @@ from pcraster.framework import DynamicModel, DynamicFramework
 # Configuration
 # ========================
 CONFIG = {
-    "output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/Trial",
+    "output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/",
     "graph_output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/Graphs",
-    "nrOfTimeSteps": 100,     # total time steps
-    "timeStepInterval": 10,   # interval to sample maps
+    "nrOfTimeSteps": 2000,     # total time steps
+    "timeStepInterval": 200,   # interval to sample maps
     "clone_map": "C:/Users/kanch/Research_models/data_2/input_maps/topography/DEM/pcr_dem.map"
 }
 
