@@ -13,7 +13,7 @@ from pcraster.framework import DynamicModel, DynamicFramework
 #case1 = Steady Flow + random variation
 case1 = {
     # Paths
-    "output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6",
+    "output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/Tial",
     "clone_map": "C:/Users/kanch/Research_models/data_2/input_maps/topography/DEM/pcr_dem.map",
     "ldd_map": "C:/Users/kanch/Research_models/data_2/input_maps/topography/LDD/WGS_LDD.map",
     "pollutant_map": "C:/Users/kanch/Research_models/data_2/input_maps/pollutants/WGS/pollution_source_WGS_200points.map",

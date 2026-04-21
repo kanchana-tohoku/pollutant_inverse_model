@@ -7,22 +7,26 @@ import numpy as np
 # ========================
 # Configuration
 # ========================
+case = 1 #pollutants arrangement and output
+            # 1-> several polluants
+            # 2 -> one pollutant (at 61)
+
 CONFIG = {
-    "output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/Trial",
+    "output_dir": f"C:/Users/kanch/Research_models/data_2/out_ADErev6/Trial_case_{case}",
     "clone_map": "C:/Users/kanch/Research_models/data_2/input_maps/topography/DEM/pcr_dem.map",
     "ldd_map": "C:/Users/kanch/Research_models/data_2/input_maps/topography/LDD/WGS_LDD.map",
     "pollutant_map": "C:/Users/kanch/Research_models/data_2/input_maps/pollutants/WGS/pollution_source_WGS_200points.map",
-    "flow_map": "C:/Users/kanch/Research_models/data_2/input_maps_synthetic/discharge/Discharge/Q",
-    "noise": 1, 
+    "flow_map": "C:/Users/kanch/Research_models/data_2/input_maps_synthetic/discharge/Discharge/Q", #m3/s
+    "noise": 1, # not in use
     "log_file": "solute_mass_log.csv",
-    "deltaT": 1,
-    "deltaX": 100,
-    "velocity": 1.8,
-    "release_start": 1,
-    "release_end": 2,
-    "nrOfTimeSteps": 2000,
+    "deltaT": 1, # seconds
+    "deltaX": 100, # meters
+    "velocity": 1.8, #m/s
+    "release_start": 1, #second
+    "release_end": 2, #second
+    "nrOfTimeSteps": 2000, #seconds
     "ocean_cell": (278, 18),
-    "replacement_csv": "C:/Users/kanch/Research_models/data_2/input_maps/pollutants/WGS/Replacement_pollution_source_WGS_200points.csv",
+    "replacement_csv": f"C:/Users/kanch/Research_models/data_2/input_maps/pollutants/WGS/case{case}/Replacement_pollution_source_WGS_200points.csv",
 }
 
 #========
@@ -53,6 +57,7 @@ def apply_replacements_from_csv(poll_map, csv_path):
 # ===================================================
 # 1. Upwind Euler model 
 # ===================================================
+
 class SoluteTransportModel_1stO_UW_Euler(DynamicModel):
     def __init__(self, cfg):
         super().__init__()
@@ -75,9 +80,7 @@ class SoluteTransportModel_1stO_UW_Euler(DynamicModel):
             )
 
         self.E_nominal = poll_map / self.deltaX
-        
-        #-------------
-        
+               
         self.M = pcr.scalar(0.0)
         self.C = pcr.scalar(0.0)
         self.ocean_release = 0.0
@@ -88,7 +91,16 @@ class SoluteTransportModel_1stO_UW_Euler(DynamicModel):
             csv.writer(f).writerow(["timestep", "Theoretical_Total", "Model_Total", "Error", "ErrorPct"])
         total_init = float(pcr.maptotal(self.E_nominal))
         print(f"[UPWIND] Total initial pollution = {total_init:.3f}")
-
+        
+         # Report initial flux path (optional check)
+        fluxpath = pcr.accuflux(self.ldd, self.E_nominal)
+        pcr.report(fluxpath, os.path.join(self.cfg["output_dir"], "fluxpath"))
+        
+        #----new pollutant map reporting--
+        pcr.report(poll_map, os.path.join(self.cfg["output_dir"], "new_poll_map"))
+        
+        #-------------
+        
     def apply_pollutant_release(self, t):
         s, e = self.cfg["release_start"], self.cfg["release_end"]
         return pcr.ifthenelse((t >= s) & (t <= e), self.E_nominal, pcr.scalar(0))

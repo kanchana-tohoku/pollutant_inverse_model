@@ -9,11 +9,13 @@ from pcraster.framework import DynamicModel, DynamicFramework
 # ========================
 # Configuration
 # ========================
+case = 1
+
 CONFIG = {
-    "output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/Trial",
-    "graph_output_dir": "C:/Users/kanch/Research_models/data_2/out_ADErev6/Graphs",
-    "nrOfTimeSteps": 10,     # total time steps
-    "timeStepInterval": 1,   # interval to sample maps
+    "output_dir": f"C:/Users/kanch/Research_models/data_2/out_ADErev6/case_{case}/TimeReversal_NoReg_2",
+    "graph_output_dir": f"C:/Users/kanch/Research_models/data_2/out_ADErev6/case_{case}/TimeReversal_NoReg_2",
+    "nrOfTimeSteps": 1999,     # total time steps
+    "timeStepInterval": 1999,   # interval to sample maps
     "clone_map": "C:/Users/kanch/Research_models/data_2/input_maps/topography/DEM/pcr_dem.map"
 }
 
@@ -21,22 +23,30 @@ CONFIG = {
 # Define cells to track
 # ========================
 cells_to_track = [
-    (254,116),(254,117),(255,117),(256,116),(257,115),(258,115),(259,114),
-    (260,114),(261,115),(262,114),(263,114),(264,114),(265,113),
-    (266,113),(266,112),(267,111),(267,110),(268,109),(269,108),
-    (270,107),(271,106),(272,106),(271,105),(271,104),(272,103),
-    (272,102),(272,101),(272,100),(273,99),(273,98),(273,97),
-    (273,96),(274,95),(275,94),(275,93),(275,92),(274,91),
-    (273,90),(272,89),(271,88),(270,87)
+(464,224),(464,225),(464,226),(463,227),(463,228),(463,229),
+(464,230),(464,231),(465,232),(465,233),(465,234),(465,235),(465,236),(464,237),
+(463,238),(462,239),(462,240),(462,241),(461,242),(459,243),(460,243),(459,244),
+(459,245),(460,246),(460,247),(459,248),(458,248),(457,248),(456,249),(455,249),
+(454,248),(453,249),(452,249),(451,249),(450,250),(449,251),(448,252),(447,252),
+(446,252),(445,253),(444,253),(443,253),(442,253),(441,253),(440,253),(439,253),
+(438,253),(437,253),(436,252),(435,252),(434,251),(433,250),(432,250),(431,250),
+(430,250),(429,249),(428,248),(427,248),(426,247),(425,247),(424,247),(423,246),
+(422,246),(421,246),(420,245),(419,245),(418,246),(417,246),(416,246),(415,246),
+(414,246),(413,245),(412,244),(411,243),(410,242),(409,243),(408,244),(407,244),
+(406,243),(405,242),(404,242),(403,243),(402,244),(401,243),(400,243),(399,242),
+(398,242),(397,242),(396,242),(395,241),(394,240),(393,239),(392,238),(391,238),
+(390,238),(389,238),(388,239),(387,239),(386,239),(385,239),(384,239),(383,238),
+(382,237),(381,236),(380,236),(379,235),(378,234),(377,234),(376,235),(375,234),
+(374,233),(373,233),(372,234),(371,235),(370,235),(369,234),(368,234),(367,234),
 ]
 
 # Define confluence cells with readable names
 confluence_cells = {
-    "A": (225,69),
-    "B": (225,75),
-    "A′": (228,70),
-    "C": (229,71),
-    "B′": (229,72)
+    "A": (464,224),
+    "B": (464,225),
+    "A′": (464,226),
+    "C": (463,227),
+    "B′": (463,229)
 }
 
 
@@ -73,13 +83,13 @@ class TrackConcentration(DynamicModel):
         if (t != 1) and (t % self.config["timeStepInterval"] != 0):
             return
 
-        M_map = self.readmap(os.path.join(self.config["output_dir"], "M"))
+        M_map = self.readmap(os.path.join(self.config["output_dir"], "MI"))
         self.timesteps.append(t)
 
         # --- Track main channel cells ---
         for (r, c) in self.main_cells:
             try:
-                val = pcr.cellvalue(M_map, r, c)[0]
+                val = pcr.cellvalue(M_map, r+1, c+1)[0]
             except Exception:
                 val = np.nan
             self.data_main[f"({r},{c})"].append(val)
@@ -88,7 +98,7 @@ class TrackConcentration(DynamicModel):
         for (r, c) in self.confl_cells.values():
 
             try:
-                val = pcr.cellvalue(M_map, r, c)[0]
+                val = pcr.cellvalue(M_map, r+1, c+1)[0]
             except Exception:
                 val = np.nan
             self.data_confl[f"({r},{c})"].append(val)
@@ -109,12 +119,13 @@ class TrackConcentration(DynamicModel):
         for t in df_main_T.columns:
             plt.plot(x, df_main_T[t], label=f"t={t}", linewidth=1.5)
 
-        plt.xlabel("Distance along channel (m)", fontsize=14)
-        plt.ylabel("Mass per length (mg/m)", fontsize=14)
-        plt.title("Pollutant Mass per length along the main channel for Cr", fontsize=14)
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-        plt.legend(fontsize=14, ncol=3)
+        plt.xlabel("Distance along channel (m)", fontsize=24)
+        plt.ylabel("Mass per length (mg/m)", fontsize=24)
+        plt.ylim(0, 0.0025)   # <-- set your desired max value here
+        plt.title("Pollutant Mass per length along the main channel", fontsize=24)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.legend(fontsize=24, ncol=2)
         plt.grid(True, linestyle="--", alpha=0.5)
         plt.tight_layout()
         plt.show()

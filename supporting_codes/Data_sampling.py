@@ -1,39 +1,50 @@
-import os
-import csv
+import numpy as np
+import pandas as pd
 import pcraster as pcr
+import os
 
-# ========================
-# Define cells to track
-# ========================
-single_channel_coordinates = [
-    (254,116),(254,117),(255,117),(256,116),(257,115),(258,115),(259,114),
-    (260,114),(261,115),(262,114),(263,114),(264,114),(265,113),
-    (266,113),(266,112),(267,111),(267,110),(268,109),(269,108),
-    (270,107),(271,106),(272,106),(271,105),(271,104),(272,103),
-    (272,102),(272,101),(272,100),(273,99),(273,98),(273,97),
-    (273,96),(274,95),(275,94),(275,93),(275,92),(274,91),
-    (273,90),(272,89),(271,88),(270,87)
-]
+# --------------------------------------------------
+# USER INPUT
+# --------------------------------------------------
+map_path = r"C:/Users/kanch/Research_models/data_2/out_ADErev6/case_2/fluxpath"
 
-# Define confluence cells with readable names
-confluence_cells = {
-    "A": (225,69),
-    "B": (225,75),
-    "A′": (228,70),
-    "C": (229,71),
-    "B′": (229,72)
-}
+row_min, row_max = 350, 470
+col_min, col_max = 200, 300
 
-cells_to_track = single_channel_coordinates #or confluence_cells or any other set of cells
+output_dir = r"C:/Users/kanch/Research_models/data_2/out_ADErev6/case_2"
+output_csv = os.path.join(output_dir, "extracted_cells.csv")
 
-#Defining the out put CSV format
+# --------------------------------------------------
+# READ MAP
+# --------------------------------------------------
+raster = pcr.readmap(map_path)
+array = pcr.pcr2numpy(raster, np.nan)
 
-#==== time step - fixed; varying x(cell) value======#
-time_step = 1200 #the time step value that should be considered
-column_1 = x_value
-column_2 = M #M value at given time step
+nrows, ncols = array.shape
+print("Raster size:", nrows, ncols)
 
-#===== varying timestep; fixed cell value=======#
-cell_value = # obtain from the above given set of coordinates
+# --------------------------------------------------
+# EXTRACT DOMAIN
+# --------------------------------------------------
+records = []
 
+for i in range(row_min, row_max + 1):
+    for j in range(col_min, col_max + 1):
+        
+        if 0 <= i < nrows and 0 <= j < ncols:
+            
+            value = array[i, j]
+            
+            if not np.isnan(value) and value != 0:
+                records.append([value, i, j])
 
+# --------------------------------------------------
+# SAVE RESULTS
+# --------------------------------------------------
+df = pd.DataFrame(records, columns=["value", "row", "column"])
+
+df.to_csv(output_csv, index=False)
+
+print("Extraction complete.")
+print("Total cells found:", len(df))
+print("Saved to:", output_csv)

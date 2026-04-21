@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Oct  6 14:45:44 2025
+PCRaster Pollutant Animation Script
+------------------------------------
+Creates GIF/MP4 animation from ADE output maps.
 
-@author: kumudu
+Author: Kanchana
+Optimized & documented version 22 Feb 2026
 """
 
-# ---- REQUIREMENTS ----
+# ======================
+# REQUIREMENTS
+# ======================
 # pip install pcraster matplotlib imageio
-# (FFMPEG optional for MP4: sudo apt-get install ffmpeg)
+# (Optional for MP4) install ffmpeg
 
 import os
 from pathlib import Path
@@ -16,282 +21,249 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
 from matplotlib.colors import LogNorm, PowerNorm, Normalize
+import matplotlib.ticker as mticker
 import pcraster as pcr
 
-# ======================
-# CONFIG (edit these)
-# ======================
-data_dir         = Path("C:/Users/kanch/Research_models/data_2/out_ADErev6")   # folder with M0000000.001 ... etc.
-base_prefix      = "M"                                   # the leading letter(s) in your filenames
-n_total_steps    = 2000                                  # total frames available
-start_step       = 1                                     # 1-based index (1..n_total_steps)
-end_step         = 2000                                  # inclusive
-ref_clone        = "C:/Users/kanch/Research_models/data_2/input_maps/topography/DEM/pcr_dem.map"  # any map with correct georeference/shape
 
-# Region of interest selection
-roi_by_window    = True                                  # True: use row/col window; False: use mask_raster
-# If roi_by_window=True: provide row/col window (0-based, Python slicing semantics; end is exclusive)
-row_min, row_max = 218, 279
-col_min, col_max = 45, 120
+# ==========================================================
+# ======================== CONFIG ==========================
+# ==========================================================
+case = 3
 
-# If roi_by_window=False: provide a Boolean mask raster (1 inside ROI, 0 outside)
-mask_raster_path = "/path/to/roi_mask_boolean.map"
+#data_dir      = Path("C:/Users/kanch/Research_models/data_2/out_ADErev6/case_2")
+                     
+data_dir =      Path(f"C:/Users/kanch/Research_models/data_2/out_ADErev6/case_{case}/TimeReversal_NoReg_2")
+                    
+# ----------------------------------------------------------
+# Create animation output directory inside data_dir
+# ----------------------------------------------------------
+anim_output_dir = data_dir / "animation"
+anim_output_dir.mkdir(parents=True, exist_ok=True)
 
-# Optional channel mask (1=channel cells, 0=else); set to None to skip
-channel_mask_path = "C:/Users/kanch/Research_models/data_2/input_maps_synthetic/pollutants/200Sources/Channels.map"  # or None
+out_gif = anim_output_dir / "pollutant_animation.gif"
+out_mp4 = None   # or anim_output_dir / "pollutant_animation.mp4"
 
-# Rendering / output
-out_gif           = "pollutant_animation2.gif"
-out_mp4           = None            # e.g., "pollutant_animation.mp4" (requires ffmpeg)
-fps               = 10              # frames per second
-cmap_name         = "turbo"         # e.g., "plasma", "magma", "turbo", "viridis"
-nan_color         = (1, 1, 1, 0)    # RGBA for NaN (transparent)
 
-# === COLOR/SCALING OPTIONS ===
-scale_mode        = "log"           # "linear" | "log" | "power"
-power_gamma       = 0.5             # only used if scale_mode == "power" (0.5 brightens lows)
-# Values <= eps will be treated as 'no visible pollutant' (set to NaN => transparent)
-eps_fraction_of_vmax = 0.01         # e.g., 1% of vmax
-absolute_eps          = 1e-10       # floor in data units
-# Optional gray base for channel cells so the plume sits above it
-draw_channel_underlay  = True
-underlay_gray          = 0.90       # 0=black .. 1=white
+base_prefix   = "MI" # for reversal "MI"
+start_step    = 1
+end_step      = 2000
+ref_clone     = "C:/Users/kanch/Research_models/data_2/input_maps/topography/DEM/pcr_dem.map"
 
-# Optional timestamp decoration (if you know start time & Δt)
-add_timestamp     = False
-start_datetime_str= "2014-01-01 00:00:00"
-dt_hours          = 6
+# ROI options
+roi_by_window = True
+row_min, row_max = 380, 500
+col_min, col_max = 200, 300
+mask_raster_path = None   # use only if roi_by_window=False
 
-# ======================
-# HELPERS
-# ======================
-def step_to_filename(step_idx, base=base_prefix):
+# Optional channel mask
+channel_mask_path = "C:/Users/kanch/Research_models/data_2/input_maps_synthetic/pollutants/200Sources/Channels.map"
+
+# Rendering
+fps         = 10
+cmap_name   = "turbo"
+scale_mode  = "log"      # "linear" | "log" | "power"
+power_gamma = 0.5
+
+eps_fraction_of_vmax = 0.01
+absolute_eps         = 1e-10
+
+
+# ==========================================================
+# ====================== UTILITIES =========================
+# ==========================================================
+
+def step_to_filename(step):
+    """Convert 1-based step index to PCRaster time-slice filename."""
+    s = step - 1
+    return f"{base_prefix}{s//1000:06d}.{(s%1000)+1:03d}"   # 07d for M
+
+
+def read_map(path):
+    """Read PCRaster map into NumPy array."""
+    return pcr.pcr2numpy(pcr.readmap(str(path)), np.nan).astype(float)
+
+
+def build_norm(vmin, vmax):
     """
-    Convert 1-based step index to PCRaster-style filename:
-      step=1   -> M0000000.001
-      step=1000-> M0000000.999
-      step=1001-> M0000001.000
-      step=2000-> M0000002.000
+    Build safe normalization.
+    Prevents LogNorm crashes.
     """
-    s = step_idx - 1
-    integer   = s // 1000
-    frac_part = (s % 1000) + 1
-    return f"{base}{integer:07d}.{frac_part:03d}"
 
-def read_map_to_array(path):
-    m = pcr.readmap(str(path))
-    return pcr.pcr2numpy(m, np.nan).astype(float)
+    if not np.isfinite(vmax) or vmax <= 0:
+        raise RuntimeError("All values are zero or invalid in selected region.")
 
-def load_mask(path, shape):
-    if path is None:
-        return np.ones(shape, dtype=bool)
-    arr = read_map_to_array(path)
-    return np.isfinite(arr) & (arr > 0.5)
+    if scale_mode == "log":
+        vmin = max(vmin, vmax * 1e-6)
+        if vmin >= vmax:
+            vmin = vmax * 1e-6
+        return LogNorm(vmin=vmin, vmax=vmax, clip=True)
 
-def apply_roi(arr, roi_mask=None, window=None):
-    if window is not None:
-        r0, r1, c0, c1 = window
-        out = arr[r0:r1, c0:c1]
-        return out
-    elif roi_mask is not None:
-        out = arr.copy()
-        out[~roi_mask] = np.nan
-        return out
-    else:
-        return arr
+    if scale_mode == "power":
+        if vmin >= vmax:
+            vmin = vmax * 0.01
+        return PowerNorm(gamma=power_gamma, vmin=vmin, vmax=vmax, clip=True)
 
-def make_norm(vmin, vmax, mode="linear", gamma=1.0):
-    if mode == "log":
-        vmin_eff = max(vmin, np.nextafter(0, 1))  # strictly > 0
-        return LogNorm(vmin=vmin_eff, vmax=vmax, clip=True)
-    elif mode == "power":
-        return PowerNorm(gamma=gamma, vmin=vmin, vmax=vmax, clip=True)
-    else:
-        return Normalize(vmin=vmin, vmax=vmax, clip=True)
+    return Normalize(vmin=vmin, vmax=vmax, clip=True)
 
-# ======================
-# MAIN
-# ======================
+
+# ==========================================================
+# ========================= MAIN ===========================
+# ==========================================================
+
 def main():
-    # 1) Set clone so PCRaster knows grid/geo
-    if not (ref_clone and os.path.exists(ref_clone)):
-        raise FileNotFoundError("Could not set clone; check ref_clone path.")
+
+    # ------------------------------------------------------
+    # 1) Initialize PCRaster clone
+    # ------------------------------------------------------
+    if not os.path.exists(ref_clone):
+        raise FileNotFoundError("Clone map not found.")
     pcr.setclone(ref_clone)
 
-    # 2) Determine window or mask
-    roi_mask = None
-    window = None
-    # peek a map to learn shape
-    first_map_path = data_dir / step_to_filename(start_step)
-    if not first_map_path.exists():
-        raise FileNotFoundError(f"First frame not found: {first_map_path}")
-    first_arr = read_map_to_array(first_map_path)
-    nrows, ncols = first_arr.shape
+    # ------------------------------------------------------
+    # 2) Load first map (determine shape)
+    # ------------------------------------------------------
+    first_path = data_dir / step_to_filename(start_step)
+    if not first_path.exists():
+        raise FileNotFoundError(f"Missing first frame: {first_path}")
 
+    base_arr = read_map(first_path)
+    nrows, ncols = base_arr.shape
+
+    # ------------------------------------------------------
+    # 3) Define ROI slicer (fast approach)
+    # ------------------------------------------------------
     if roi_by_window:
-        # sanitize bounds
-        r0 = max(0, min(row_min, nrows))
-        r1 = max(0, min(row_max, nrows))
-        c0 = max(0, min(col_min, ncols))
-        c1 = max(0, min(col_max, ncols))
-        window = (r0, r1, c0, c1)
-        # quick crop preview to set shape
-        first_arr = first_arr[r0:r1, c0:c1]
+        r0, r1 = max(0,row_min), min(nrows,row_max)
+        c0, c1 = max(0,col_min), min(ncols,col_max)
+        slicer = np.s_[r0:r1, c0:c1]
     else:
-        roi_mask = load_mask(mask_raster_path, (nrows, ncols))
-        first_arr = apply_roi(first_arr, roi_mask=roi_mask)
+        roi_mask = read_map(mask_raster_path) > 0.5
+        slicer = None
 
-    # Optional: mask to channels only
+    # ------------------------------------------------------
+    # 4) Load optional channel mask (once only)
+    # ------------------------------------------------------
     if channel_mask_path:
-        ch_mask = load_mask(channel_mask_path, (nrows, ncols))
-        if window:
-            r0, r1, c0, c1 = window
-            ch_mask = ch_mask[r0:r1, c0:c1]
-        # zero-out non-channel cells
-        first_arr[~ch_mask] = np.nan
+        ch_mask = read_map(channel_mask_path) > 0.5
     else:
         ch_mask = None
 
-    # 3) Scan once to get global vmin/vmax in the chosen subset for consistent colors
+    # ------------------------------------------------------
+    # 5) Scan once for global min/max
+    # ------------------------------------------------------
     vmin, vmax = np.inf, -np.inf
-    for step in range(start_step, end_step + 1):
-        fn = data_dir / step_to_filename(step)
-        if not fn.exists():
+    valid_steps = []
+
+    for step in range(start_step, end_step+1):
+        f = data_dir / step_to_filename(step)
+        if not f.exists():
             continue
-        a = read_map_to_array(fn)
-        if roi_by_window:
-            a = a[window[0]:window[1], window[2]:window[3]]
-        elif roi_mask is not None:
-            a = apply_roi(a, roi_mask=roi_mask)
+
+        arr = read_map(f)
+
+        if slicer is not None:
+            arr = arr[slicer]
+        else:
+            arr[~roi_mask] = np.nan
+
         if ch_mask is not None:
-            a[~ch_mask] = np.nan
+            arr[~ch_mask[slicer] if slicer else ~ch_mask] = np.nan
 
-        if np.isfinite(a).any():
-            vmin = min(vmin, np.nanmin(a))
-            vmax = max(vmax, np.nanmax(a))
+        if np.isfinite(arr).any():
+            vmin = min(vmin, np.nanmin(arr))
+            vmax = max(vmax, np.nanmax(arr))
+            valid_steps.append(step)
 
-    if not np.isfinite(vmin) or not np.isfinite(vmax):
-        raise RuntimeError("Could not determine vmin/vmax; all values are NaN in the chosen subset?")
+    if not valid_steps:
+        raise RuntimeError("No valid frames found.")
 
-    # Define threshold for visibility: everything <= eps becomes transparent
+    # ------------------------------------------------------
+    # 6) Threshold small values (visual clarity)
+    # ------------------------------------------------------
     eps = max(absolute_eps, eps_fraction_of_vmax * vmax)
-
-    # For color mapping, start at eps (so the first “visible” value is bright enough)
     plot_vmin = eps
     plot_vmax = vmax
 
-    norm = make_norm(plot_vmin, plot_vmax, mode=scale_mode, gamma=power_gamma)
+    norm = build_norm(plot_vmin, plot_vmax)
 
-    # 4) Set up figure
-    plt.rcParams["figure.figsize"] = (7, 6)
-    fig, ax = plt.subplots()
+    # ------------------------------------------------------
+    # 7) Setup plot
+    # ------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(7,6))
 
-    # Base underlay (gray) so channels are visible even when plume is transparent
-    base_im = None
-    if draw_channel_underlay and (ch_mask is not None):
-        base = np.full_like(first_arr, np.nan, dtype=float)
-        base[ch_mask] = underlay_gray  # gray only on channels
-        base_im = ax.imshow(base, cmap="gray", vmin=0, vmax=1, origin="upper", interpolation="nearest")
-
-    # Pollutant overlay colormap
     cmap = plt.get_cmap(cmap_name).copy()
-    cmap.set_bad(color=nan_color)  # NaNs -> transparent (or your color)
+    cmap.set_bad((1,1,1,0))   # transparent NaNs
 
-    # Mask tiny values so they render as transparent (bad)
-    first_arr = first_arr.copy()
-    first_arr[first_arr <= eps] = np.nan
+    # --- Plot channel background first ---
+    if ch_mask is not None:
+        if slicer is not None:
+            ch_display = ch_mask[slicer]
+        else:
+            ch_display = ch_mask
+    
+        ax.imshow(ch_display,
+                  cmap="Greys",
+                  alpha=0.4,
+                  origin="upper")
+    
+    # --- Then pollutant layer on top ---
+    im = ax.imshow(np.zeros_like(base_arr[slicer] if slicer else base_arr),
+                   cmap=cmap,
+                   norm=norm,
+                   origin="upper",
+                   alpha=0.9)
 
-    im = ax.imshow(first_arr, cmap=cmap, norm=norm, origin="upper", interpolation="nearest")
-    
-    
-    cb = fig.colorbar(im, ax=ax, shrink=0.85, label="Pollutant concentration (mg/L)")
-    # Set more frequent tick marks (linear or log)
+    cb = fig.colorbar(im, ax=ax)
+    cb.set_label("Pollutant concentration (mg/L)")
+
     if scale_mode == "log":
-        import matplotlib.ticker as mticker
-        # Major ticks at 1e-6, 1e-5, 1e-4, etc. Adjust to your value range
-        cb.ax.yaxis.set_major_locator(mticker.LogLocator(base=10.0, subs=(1.0,), numticks=10))
-        # Optional minor ticks between major powers of 10
-        cb.ax.yaxis.set_minor_locator(mticker.LogLocator(base=10.0, subs=np.arange(2, 10)*0.1, numticks=10))
-        cb.ax.yaxis.set_minor_formatter(mticker.NullFormatter())  # hide labels on minor ticks
+        cb.ax.yaxis.set_major_locator(mticker.LogLocator(base=10))
     else:
-        # Example: 10 evenly spaced labels
-        ticks = np.linspace(plot_vmin, plot_vmax, 10)
+        ticks = np.linspace(plot_vmin, plot_vmax, 8)
         cb.set_ticks(ticks)
-        cb.ax.set_yticklabels([f"{t:.2e}" if t < 0.01 else f"{t:.2f}" for t in ticks])
 
-    # Optional: increase label font size
-    cb.ax.tick_params(labelsize=9)
-    cb.set_label("Pollutant concentration (mg/L)", fontsize=10)
-    
-    ax.set_title(f"Pollutant transport (steps {start_step}–{end_step})")
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
 
-    # Optional timestamp label
-    if add_timestamp:
-        from datetime import datetime
-        t0 = datetime.fromisoformat(start_datetime_str)
-        text_ts = ax.text(0.02, 0.98, "", transform=ax.transAxes, va="top", ha="left",
-                          bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"))
-    else:
-        text_ts = None
+    # ------------------------------------------------------
+    # 8) Animation update function
+    # ------------------------------------------------------
+    def update(i):
+        step = valid_steps[i]
+        arr = read_map(data_dir / step_to_filename(step))
 
-    # Log-colorbar ticks if needed
-    if scale_mode == "log":
-        import matplotlib.ticker as mticker
-        cb.ax.yaxis.set_major_locator(mticker.LogLocator(base=10.0))
-        cb.ax.yaxis.set_minor_locator(mticker.LogLocator(base=10.0, subs=np.arange(2, 10) * .1))
-
-    # 5) Frame generator
-    step_list = [s for s in range(start_step, end_step + 1)
-                 if (data_dir / step_to_filename(s)).exists()]
-
-    def step_idx_to_name(step_idx):
-        return step_to_filename(step_idx)
-
-    def update(frame_idx):
-        step = step_list[frame_idx]
-        fn = data_dir / step_to_filename(step)
-        a = read_map_to_array(fn)
-        if roi_by_window:
-            a = a[window[0]:window[1], window[2]:window[3]]
-        elif roi_mask is not None:
-            a = apply_roi(a, roi_mask=roi_mask)
-        if ch_mask is not None:
-            a[~ch_mask] = np.nan
-
-        # Make tiny concentrations transparent
-        a = a.copy()
-        a[a <= eps] = np.nan
-
-        im.set_data(a)
-        if add_timestamp:
-            from datetime import timedelta
-            elapsed_steps = step - start_step
-            text_ts.set_text((t0 + timedelta(hours=elapsed_steps * dt_hours)).strftime("%Y-%m-%d %H:%M"))
-            ax.set_title(f"Pollutant transport | step {step} ({step_idx_to_name(step)})")
-            return [im, text_ts]
+        if slicer is not None:
+            arr = arr[slicer]
         else:
-            ax.set_title(f"Pollutant transport | step {step} ({step_idx_to_name(step)})")
-            return [im]
+            arr[~roi_mask] = np.nan
 
-    anim = FuncAnimation(fig, update, frames=len(step_list), interval=1000/fps, blit=False)
+ #       if ch_mask is not None:
+    #        arr[~ch_mask[slicer] if slicer else ~ch_mask] = np.nan
 
-    # 6) Save outputs
+        arr[arr <= eps] = np.nan
+        im.set_data(arr)
+
+        ax.set_title(f"Step {step}")
+        return [im]
+
+    anim = FuncAnimation(fig, update,
+                         frames=len(valid_steps),
+                         interval=1000/fps)
+
+    # ------------------------------------------------------
+    # 9) Save outputs
+    # ------------------------------------------------------
     if out_gif:
-        print(f"Writing GIF: {out_gif}")
-        anim.save(out_gif, writer=PillowWriter(fps=fps))
+        print(f"Writing GIF to {out_gif} ...")
+        anim.save(str(out_gif), writer=PillowWriter(fps=fps))
 
     if out_mp4:
-        print(f"Writing MP4: {out_mp4}")
-        try:
-            anim.save(out_mp4, writer=FFMpegWriter(fps=fps, bitrate=3000))
-        except Exception as e:
-            print("MP4 export failed (is ffmpeg installed?). Error:", e)
+        print(f"Writing MP4 to {out_mp4} ...")
+        anim.save(str(out_mp4), writer=FFMpegWriter(fps=fps))
 
-    # Show the animation window (last frame will be visible)
     plt.show()
     print("Done.")
+
 
 if __name__ == "__main__":
     main()

@@ -7,7 +7,7 @@ import os
 
 #==== senario selection ======
 NofSou = 4
-case = 3
+case = 1
 
 #case 1 - Equal contributions
 #case 2 - Slightly different contributions
@@ -67,7 +67,7 @@ class NNLSsolver:
     # ========================================================================================
     # 1. IDEAL CONDITION
     # ========================================================================================
-    def idealcondition(self, k_list=[1,2,3, 4, 8]):
+    def idealcondition(self, k_list=[1,2, 4, 8]):
         rows = []
 
         for k in k_list:
@@ -100,7 +100,7 @@ class NNLSsolver:
     # ========================================================================================
     # 2. NOISE ON OBSERVATION
     # ========================================================================================
-    def noisetoobs(self, k_list=[1,2,3,4,8], mc_runs=100):
+    def noisetoobs(self, k_list=[1,2,4,8], mc_runs=100):
         rows = []
 
         for k in k_list:
@@ -148,7 +148,7 @@ class NNLSsolver:
     # ========================================================================================
     # 3. NOISE TO SIGNATURE MATRIX
     # ========================================================================================
-    def noisetosignature(self, k_list=[1,2, 3, 4, 5], mc_runs=200):
+    def noisetosignature(self, k_list=[1,2, 4, 5], mc_runs=200):
         rows = []
 
         for k in k_list:
@@ -191,7 +191,7 @@ class NNLSsolver:
     # ========================================================================================
     # 4. NOISE TO SIGNATURE + OBSERVATION
     # ========================================================================================
-    def noisetosignatureandobs(self, k_list=[1,2, 3, 4, 5], mc_runs=100):
+    def noisetosignatureandobs(self, k_list=[1,2, 4, 5], mc_runs=100):
         rows = []
 
         for k in k_list:

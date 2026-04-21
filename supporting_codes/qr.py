@@ -7,6 +7,6 @@ Created on Mon Aug 18 16:50:02 2025
 
 import qrcode
 
-data = "Kanchana"
+data = "www.linkedin.com/in/kanchana-wijeratna"
 img = qrcode.make(data)
 img.save("KQR.png")
